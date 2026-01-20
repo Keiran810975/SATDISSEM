@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	NUM_SATELLITES   = globals.N - 1 
-	NUM_FRAGMENTS    = globals.F() 
-	FRAGMENT_SIZE_MB = globals.FRAGMENT_SIZE_MB 
+	NUM_SATELLITES   = globals.N - 1
+	NUM_FRAGMENTS    = globals.F()
+	FRAGMENT_SIZE_MB = globals.FRAGMENT_SIZE_MB
 )
 
 func PrintDynamicTopology(nodes []*model.SatelliteNode) {
@@ -49,12 +49,10 @@ func main() {
 
 	startTime := time.Now()
 
-	// algorithms.RunSimulationFlooding(nodes)  // Flooding
 	algorithms.RunSimulationExperiment(nodes) // Experiment
+	// algorithms.RunSimulationFlooding(nodes)  // Flooding
 	// algorithms.RunSimulationRLNC(nodes) // RLNC
 	// algorithms.RunSimulationDFedSat(nodes) // DFedSat
-
-	// algorithms.RunAblationStudy(nodes)
 
 	endTime := time.Now()
 	duration := endTime.Sub(startTime).Seconds()

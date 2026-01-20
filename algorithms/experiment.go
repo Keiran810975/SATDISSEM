@@ -2,30 +2,70 @@ package algorithms
 
 import (
 	"fmt"
-	"sort"
-	"sync"
-	"time"
-
+	"os"
 	"sate/globals"
 	"sate/model"
+	"sort"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 const (
 	STABLE_THRESHOLD   = 3.0
 	MAX_PARALLEL_TRANS = 6
 
-	INJECTION_ALPHA = 0.6 
+	INJECTION_ALPHA = 0.40
 )
 
 var (
-	simStart            = time.Now()
-	lockFlooding        sync.Mutex
-	lockExperiment      sync.Mutex
+	simStart       = time.Now()
+	lockFlooding   sync.Mutex
+	lockExperiment sync.Mutex
+	receiverBusyMu sync.Mutex
+	receiverBusy   []int32
 
 	EnableLoadBalancing     = true
 	EnableMissingFrequency  = true
 	EnableConflictAvoidance = true
 )
+
+func resetReceiverBusy(totalNodes int) {
+	receiverBusyMu.Lock()
+	defer receiverBusyMu.Unlock()
+
+	if totalNodes <= 0 {
+		receiverBusy = nil
+		return
+	}
+	if receiverBusy == nil || len(receiverBusy) != totalNodes {
+		receiverBusy = make([]int32, totalNodes)
+		return
+	}
+	for i := range receiverBusy {
+		atomic.StoreInt32(&receiverBusy[i], 0)
+	}
+}
+
+func tryAcquireReceiver(receiverID int) bool {
+	if !EnableConflictAvoidance {
+		return true
+	}
+	if receiverID < 0 || receiverID >= len(receiverBusy) {
+		return true
+	}
+	return atomic.CompareAndSwapInt32(&receiverBusy[receiverID], 0, 1)
+}
+
+func releaseReceiver(receiverID int) {
+	if !EnableConflictAvoidance {
+		return
+	}
+	if receiverID < 0 || receiverID >= len(receiverBusy) {
+		return
+	}
+	atomic.StoreInt32(&receiverBusy[receiverID], 0)
+}
 
 func currentSimulationTime() float64 {
 	return time.Since(simStart).Seconds()
@@ -109,16 +149,17 @@ func transmitFromStationMultiple(station, receiver *model.SatelliteNode, fragCou
 					globalScoreI := computeGlobalSeedingScore(fragI, globalMissingFreq, totalNodes)
 					globalScoreJ := computeGlobalSeedingScore(fragJ, globalMissingFreq, totalNodes)
 
-
 					holdingRatioI := computeHoldingRatio(station, fragI, nodes)
 					holdingRatioJ := computeHoldingRatio(station, fragJ, nodes)
-					regionalScoreI := 1.0 - holdingRatioI 
+					regionalScoreI := 1.0 - holdingRatioI
 					regionalScoreJ := 1.0 - holdingRatioJ
 
 					scoreI := INJECTION_ALPHA*globalScoreI + (1.0-INJECTION_ALPHA)*regionalScoreI
 					scoreJ := INJECTION_ALPHA*globalScoreJ + (1.0-INJECTION_ALPHA)*regionalScoreJ
 					return scoreI > scoreJ
 				})
+			} else {
+				sort.Ints(fragList)
 			}
 
 			for _, frag := range fragList {
@@ -130,17 +171,14 @@ func transmitFromStationMultiple(station, receiver *model.SatelliteNode, fragCou
 				lockExperiment.Lock()
 				_, alreadyHave := receiver.Fragments[frag]
 				if !alreadyHave {
-					// 成功传输：接收方没有该分片
 					receiver.Fragments[frag] = struct{}{}
 					fragCounts[frag]++
 					lockExperiment.Unlock()
-				
 				} else {
-					// 接收方已拥有该分片
 					lockExperiment.Unlock()
 				}
 
-				fmt.Printf("[%.2fs] 🚀 Station→%d sending %d\n", currentSimulationTime(), receiver.ID, frag)
+				fmt.Printf("[%.2fs] Station→%d sending %d\n", currentSimulationTime(), receiver.ID, frag)
 				time.Sleep(time.Duration(delay * float64(time.Second)))
 				rem -= delay
 			}
@@ -180,6 +218,8 @@ func transmitSatelliteFragmentsMultiple(sender, receiver *model.SatelliteNode, m
 				sort.Slice(fragList, func(i, j int) bool {
 					return missingFreq[fragList[i]] > missingFreq[fragList[j]]
 				})
+			} else {
+				sort.Ints(fragList)
 			}
 
 			for _, frag := range fragList {
@@ -191,16 +231,15 @@ func transmitSatelliteFragmentsMultiple(sender, receiver *model.SatelliteNode, m
 				lockExperiment.Lock()
 				_, alreadyHave := receiver.Fragments[frag]
 				if !alreadyHave {
-
 					receiver.Fragments[frag] = struct{}{}
 					lockExperiment.Unlock()
 				} else {
-
 					lockExperiment.Unlock()
+					continue
 				}
 
 				time.Sleep(time.Duration(delay * float64(time.Second)))
-				fmt.Printf("[%.2fs] 🛰️ %d→%d stable:%t sending %d (missing:%d)\n",
+				fmt.Printf("[%.2fs] %d→%d stable:%t sending %d (missing:%d)\n",
 					currentSimulationTime(), sender.ID, receiver.ID, isStable, frag, missingFreq[frag])
 				rem -= delay
 			}
@@ -208,6 +247,33 @@ func transmitSatelliteFragmentsMultiple(sender, receiver *model.SatelliteNode, m
 		}
 	}
 	return true
+}
+
+var (
+	cachedMissingFreq     map[int]int
+	cachedMissingFreqLock sync.RWMutex
+	lastMissingFreqUpdate time.Time
+)
+
+func getCachedMissingFreq(nodes []*model.SatelliteNode) map[int]int {
+	cachedMissingFreqLock.RLock()
+	if cachedMissingFreq != nil && time.Since(lastMissingFreqUpdate) < 100*time.Millisecond {
+		result := cachedMissingFreq
+		cachedMissingFreqLock.RUnlock()
+		return result
+	}
+	cachedMissingFreqLock.RUnlock()
+
+	cachedMissingFreqLock.Lock()
+	defer cachedMissingFreqLock.Unlock()
+
+	if cachedMissingFreq != nil && time.Since(lastMissingFreqUpdate) < 100*time.Millisecond {
+		return cachedMissingFreq
+	}
+
+	cachedMissingFreq = computeGlobalMissingFrequency(nodes)
+	lastMissingFreqUpdate = time.Now()
+	return cachedMissingFreq
 }
 
 func experimentNodeThread(node *model.SatelliteNode, nodes []*model.SatelliteNode, fragCounts map[int]int, wg *sync.WaitGroup) {
@@ -229,7 +295,7 @@ func experimentNodeThread(node *model.SatelliteNode, nodes []*model.SatelliteNod
 			break
 		}
 
-		missingFreq := computeGlobalMissingFrequency(nodes)
+		missingFreq := getCachedMissingFreq(nodes)
 
 		var localWg sync.WaitGroup
 		for id := range node.DynamicNeighbors {
@@ -248,6 +314,12 @@ func experimentNodeThread(node *model.SatelliteNode, nodes []*model.SatelliteNod
 					<-sem
 					localWg.Done()
 				}()
+
+				if !tryAcquireReceiver(nei.ID) {
+					return
+				}
+				defer releaseReceiver(nei.ID)
+
 				if node.ID == 0 {
 					transmitFromStationMultiple(node, nei, fragCounts, nodes, missingFreq)
 				} else {
@@ -262,6 +334,12 @@ func experimentNodeThread(node *model.SatelliteNode, nodes []*model.SatelliteNod
 
 func RunSimulationExperiment(nodes []*model.SatelliteNode) {
 	simStart = time.Now()
+	resetReceiverBusy(len(nodes))
+
+	cachedMissingFreqLock.Lock()
+	cachedMissingFreq = nil
+	lastMissingFreqUpdate = time.Time{}
+	cachedMissingFreqLock.Unlock()
 
 	fragCounts := make(map[int]int)
 	for i := 0; i < globals.F(); i++ {
@@ -278,16 +356,6 @@ func RunSimulationExperiment(nodes []*model.SatelliteNode) {
 	fmt.Printf("  - Number of nodes: %d\n", totalNodes)
 	fmt.Printf("  - Injection weight α: %.2f (Global Seeding weight)\n", INJECTION_ALPHA)
 	fmt.Printf("  - Regional Feedback weight: %.2f\n", 1.0-INJECTION_ALPHA)
-	if totalNodes < 500 {
-		fmt.Printf("  - Recommended α range: 0.4-0.5 (small-scale network)\n")
-	} else if totalNodes < 1000 {
-		fmt.Printf("  - Recommended α range: 0.5-0.6 (medium-scale network)\n")
-	} else {
-		fmt.Printf("  - Recommended α range: 0.6-0.7 (large-scale network)\n")
-	}
-	fmt.Printf("  - Load balancing: %v\n", EnableLoadBalancing)
-	fmt.Printf("  - Missing frequency priority: %v\n", EnableMissingFrequency)
-	fmt.Printf("  - Conflict avoidance: %v\n", EnableConflictAvoidance)
 
 	var wg sync.WaitGroup
 	for _, node := range nodes {
@@ -297,4 +365,35 @@ func RunSimulationExperiment(nodes []*model.SatelliteNode) {
 	wg.Wait()
 
 	fmt.Printf("\nExperiment group completed, total time: %.2f seconds\n", currentSimulationTime())
+
+	finalMissing := computeGlobalMissingFrequency(nodes)
+	totalMissingCount := 0
+	for _, count := range finalMissing {
+		totalMissingCount += count
+	}
+	if totalMissingCount == 0 {
+		fmt.Println("Final Validation Passed: All fragments are fully distributed (Total Missing: 0).")
+	} else {
+		fmt.Printf("Final Validation Failed: Total Missing Fragments: %d\n", totalMissingCount)
+	}
+
+	file, err := os.OpenFile(
+		"output.log",
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+		0644,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	fmt.Fprintf(
+		file,
+		"Experiment sate_num=%d , F=%d ,F_Size=%.2fMB ,ALPHA=%.2f, time:%.2f seconds\n",
+		len(nodes)-1,
+		globals.F(),
+		globals.FRAGMENT_SIZE_MB,
+		INJECTION_ALPHA,
+		currentSimulationTime(),
+	)
 }

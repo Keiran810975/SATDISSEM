@@ -43,7 +43,6 @@ func (s *SatelliteNode) GetBandwidth(otherID int) float64 {
 	return 0.0
 }
 
-// 返回排序后的分片列表
 func FragmentList(fragments map[int]struct{}) []int {
 	keys := make([]int, 0, len(fragments))
 	for k := range fragments {
@@ -53,7 +52,6 @@ func FragmentList(fragments map[int]struct{}) []int {
 	return keys
 }
 
-// 差集 A - B
 func FragmentDiff(a, b map[int]struct{}) map[int]struct{} {
 	diff := make(map[int]struct{})
 	for k := range a {

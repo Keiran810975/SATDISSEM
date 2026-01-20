@@ -12,10 +12,10 @@ import (
 )
 
 var (
-	N = 385
-	f = 500 
+	N = 384 + 1
+	f = 500
 
-	FRAGMENT_SIZE_MB = 100.0
+	FRAGMENT_SIZE_MB = 1.0
 
 	NUM_NODES     = N - 1
 	SATELLITE_IDS = make([]int, NUM_NODES-1)
@@ -71,13 +71,13 @@ func LoadDynamicTopologyFromFile(filePath string, numNodes int) []*model.Satelli
 				continue
 			}
 
-			ti := model.TimeInterval{Start: interval[0], End: interval[1]}
+			ti := model.TimeInterval{Start: interval[0]/100, End: interval[1]/100}
 
 			nodes[src].DynamicNeighbors[dst] = append(nodes[src].DynamicNeighbors[dst], ti)
 			nodes[dst].DynamicNeighbors[src] = append(nodes[dst].DynamicNeighbors[src], ti)
 
 
-			bw := 80 + rand.Float64()*40
+			bw := 90 + rand.Float64()*20
 
 			if src == 0 || dst == 0 {
 				bw = bw * 0.25
