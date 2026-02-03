@@ -1,7 +1,7 @@
-# Gossip
+# SATDISSEM
 
 This project simulates data transmission from a **ground base station** to multiple **satellites**.  
-It provides both **control group (Flooding)** and **experimental group (Gossip)** algorithms for comparison.
+It provides both **control group (Flooding)** and **experimental group (Satdissem)** algorithms for comparison.
 
 ---
 
@@ -77,6 +77,6 @@ topologyFile = "your_topology.json"
 // Run control group (Flooding)
 algorithms.RunSimulationFlooding(nodes)
 
-// Run experimental group (Gossip)
+// Run experimental group (Satdissem)
 algorithms.RunSimulationExperiment(nodes)
 ```
