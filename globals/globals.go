@@ -17,11 +17,10 @@ var (
 
 	FRAGMENT_SIZE_MB = 1.0
 
-	NUM_NODES     = N - 1
-	SATELLITE_IDS = make([]int, NUM_NODES-1)
+	NUM_NODES          = N - 1
+	SATELLITE_IDS      = make([]int, NUM_NODES-1)
 	TransmissionDelays = make([][]float64, N)
 )
-
 
 func F() int {
 	return f / 10
@@ -32,7 +31,6 @@ func LoadDynamicTopologyFromFile(filePath string, numNodes int) []*model.Satelli
 	for i := 0; i < numNodes; i++ {
 		nodes[i] = &model.SatelliteNode{
 			ID:               i,
-			MaxConnections:   6,
 			Fragments:        make(map[int]struct{}),
 			DynamicNeighbors: make(map[int][]model.TimeInterval),
 			Bandwidths:       make(map[int]float64),
@@ -71,11 +69,10 @@ func LoadDynamicTopologyFromFile(filePath string, numNodes int) []*model.Satelli
 				continue
 			}
 
-			ti := model.TimeInterval{Start: interval[0]/100, End: interval[1]/100}
+			ti := model.TimeInterval{Start: interval[0] / 100, End: interval[1] / 100}
 
 			nodes[src].DynamicNeighbors[dst] = append(nodes[src].DynamicNeighbors[dst], ti)
 			nodes[dst].DynamicNeighbors[src] = append(nodes[dst].DynamicNeighbors[src], ti)
-
 
 			bw := 90 + rand.Float64()*20
 
@@ -90,7 +87,6 @@ func LoadDynamicTopologyFromFile(filePath string, numNodes int) []*model.Satelli
 
 	return nodes
 }
-
 
 func init() {
 	for i := 0; i < NUM_NODES-1; i++ {

@@ -9,7 +9,6 @@ type TimeInterval struct {
 
 type SatelliteNode struct {
 	ID               int
-	MaxConnections   int
 	Fragments        map[int]struct{}
 	DynamicNeighbors map[int][]TimeInterval
 	Bandwidths       map[int]float64
@@ -19,7 +18,6 @@ type SatelliteNode struct {
 func NewSatelliteNode(id int) *SatelliteNode {
 	return &SatelliteNode{
 		ID:               id,
-		MaxConnections:   6,
 		Fragments:        make(map[int]struct{}),
 		DynamicNeighbors: make(map[int][]TimeInterval),
 		Bandwidths:       make(map[int]float64),

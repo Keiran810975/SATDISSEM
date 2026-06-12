@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	STABLE_THRESHOLD   = 3.0
-	MAX_PARALLEL_TRANS = 6
+	STABLE_THRESHOLD = 3.0
 
 	INJECTION_ALPHA = 0.40
 )
@@ -278,7 +277,6 @@ func getCachedMissingFreq(nodes []*model.SatelliteNode) map[int]int {
 
 func experimentNodeThread(node *model.SatelliteNode, nodes []*model.SatelliteNode, fragCounts map[int]int, wg *sync.WaitGroup) {
 	defer wg.Done()
-	sem := make(chan struct{}, MAX_PARALLEL_TRANS)
 
 	for {
 		now := currentSimulationTime()
@@ -307,11 +305,9 @@ func experimentNodeThread(node *model.SatelliteNode, nodes []*model.SatelliteNod
 				continue
 			}
 
-			sem <- struct{}{}
 			localWg.Add(1)
 			go func(nei *model.SatelliteNode) {
 				defer func() {
-					<-sem
 					localWg.Done()
 				}()
 
